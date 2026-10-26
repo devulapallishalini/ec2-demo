@@ -1,0 +1,229 @@
+name: Terraform
+
+# Pull request -> plan dev and prod, post each plan as a PR comment.
+# Merge to main -> apply dev, then prod (prod waits for approval).
+# Manual run    -> plan, apply or destroy one environment.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".terraform.lock.hcl"
+      - "keys/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".terraform.lock.hcl"
+      - "keys/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment"
+        type: choice
+        options: [dev, prod]
+        default: dev
+      action:
+        description: "What to do"
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+
+permissions:
+  contents: read
+  pull-requests: write # to comment the plan on PRs
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VERSION: "1.16.4"
+  AWS_REGION: ap-south-1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Pull requests: check formatting, validate, and plan both environments.
+  # ---------------------------------------------------------------------------
+  plan:
+    name: Plan (${{ matrix.env }})
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.TF_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.TF_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        run: terraform init
+
+      - name: Select workspace
+        run: terraform workspace select -or-create ${{ matrix.env }}
+
+      - name: Validate
+        run: terraform validate -no-color
+
+      - name: Plan
+        run: |
+          terraform plan -no-color -lock-timeout=5m \
+            -var-file=${{ matrix.env }}.tfvars -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Add plan to run summary
+        run: |
+          {
+            echo "### Terraform plan: ${{ matrix.env }}"
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # One comment per environment, updated on every new push to the PR.
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        env:
+          ENV_NAME: ${{ matrix.env }}
+        with:
+          script: |
+            const fs = require('fs');
+            const env = process.env.ENV_NAME;
+            const marker = `<!-- terraform-plan-${env} -->`;
+            let plan = fs.readFileSync('plan.txt', 'utf8');
+            const summary = (plan.match(/^Plan: .*$|^No changes\..*$/m) || ['(see run log)'])[0];
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated, see run summary)';
+            const body = [
+              marker,
+              `### Terraform plan: \`${env}\``,
+              `**${summary}**`,
+              '<details><summary>Show full plan</summary>',
+              '',
+              '```',
+              plan,
+              '```',
+              '</details>',
+              '',
+              `_Commit ${context.sha.slice(0, 7)}, [run log](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})_`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+
+  # ---------------------------------------------------------------------------
+  # Merge to main: apply dev first, then prod. max-parallel 1 runs them in
+  # order, and if dev fails, prod is cancelled. The "prod" GitHub environment
+  # should require a reviewer, so prod waits for your approval.
+  # ---------------------------------------------------------------------------
+  apply:
+    name: Apply (${{ matrix.env }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      max-parallel: 1
+      matrix:
+        env: [dev, prod]
+    environment: ${{ matrix.env }}
+    concurrency:
+      group: terraform-${{ matrix.env }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.TF_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.TF_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        run: terraform init
+
+      - name: Select workspace
+        run: terraform workspace select -or-create ${{ matrix.env }}
+
+      - name: Plan
+        run: terraform plan -no-color -lock-timeout=5m -var-file=${{ matrix.env }}.tfvars -out=tfplan
+
+      - name: Apply
+        run: terraform apply -no-color -lock-timeout=5m tfplan
+
+      - name: Show outputs
+        run: terraform output -no-color >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Manual run from the Actions tab: plan, apply or destroy one environment.
+  # ---------------------------------------------------------------------------
+  manual:
+    name: ${{ inputs.action }} (${{ inputs.environment }})
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: terraform-${{ inputs.environment }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.TF_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.TF_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        run: terraform init
+
+      - name: Select workspace
+        run: terraform workspace select -or-create ${{ inputs.environment }}
+
+      - name: Plan
+        run: |
+          DESTROY_FLAG=""
+          if [ "${{ inputs.action }}" = "destroy" ]; then DESTROY_FLAG="-destroy"; fi
+          terraform plan -no-color -lock-timeout=5m $DESTROY_FLAG \
+            -var-file=${{ inputs.environment }}.tfvars -out=tfplan
+
+      - name: Apply
+        if: inputs.action != 'plan'
+        run: terraform apply -no-color -lock-timeout=5m tfplan

@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageEc2DemoResources",
+      "Effect": "Allow",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "aws:RequestedRegion": "ap-south-1" }
+      }
+    },
+    {
+      "Sid": "StateBucketList",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::tf-state-949926374215-ap-south-1"
+    },
+    {
+      "Sid": "StateBucketObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::tf-state-949926374215-ap-south-1/*"
+    },
+    {
+      "Sid": "StateLockTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"],
+      "Resource": "arn:aws:dynamodb:ap-south-1:949926374215:table/terraform-locks"
+    }
+  ]
+}
