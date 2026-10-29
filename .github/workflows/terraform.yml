@@ -1,8 +1,8 @@
 name: Terraform
 
-# Pull request -> plan dev and prod, post each plan as a PR comment.
-# Merge to main -> apply dev, then prod (prod waits for approval).
-# Manual run    -> plan, apply or destroy one environment.
+# Pull request -> plan dev and post the plan as a PR comment.
+# Merge to main -> apply dev only.
+# Manual run    -> plan, apply or destroy dev.
 
 on:
   pull_request:
@@ -30,9 +30,9 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment"
+        description: "Only the dev environment is enabled to limit costs"
         type: choice
-        options: [dev, prod]
+        options: [dev]
         default: dev
       action:
         description: "What to do"
@@ -91,7 +91,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   # ---------------------------------------------------------------------------
-  # Pull requests: check formatting, validate, and plan both environments.
+  # Pull requests: check formatting, validate, and plan the dev environment.
   # ---------------------------------------------------------------------------
   plan:
     name: Plan (${{ matrix.env }})
@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [dev, prod]
+        env: [dev]
 
     steps:
       - uses: actions/checkout@v4
@@ -183,9 +183,7 @@ jobs:
             }
 
   # ---------------------------------------------------------------------------
-  # Merge to main: apply dev first, then prod. max-parallel 1 runs them in
-  # order, and if dev fails, prod is cancelled. The "prod" GitHub environment
-  # should require a reviewer, so prod waits for your approval.
+  # Merge to main: apply dev only.
   # ---------------------------------------------------------------------------
   apply:
     name: Apply (${{ matrix.env }})
@@ -194,9 +192,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
-      max-parallel: 1
       matrix:
-        env: [dev, prod]
+        env: [dev]
     environment: ${{ matrix.env }}
     concurrency:
       group: terraform-${{ matrix.env }}

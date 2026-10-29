@@ -1,9 +1,8 @@
 # Remote state in S3 with DynamoDB locking. Create both first with ../bootstrap.
 # Backend settings can't use variables, so the names are written out here.
 #
-# dev and prod use separate workspaces, so each gets its own state file:
+# The dev workspace uses its own state file:
 #   s3://tf-state-949926374215-ap-south-1/env:/dev/ec2-demo/terraform.tfstate
-#   s3://tf-state-949926374215-ap-south-1/env:/prod/ec2-demo/terraform.tfstate
 
 terraform {
   backend "s3" {
