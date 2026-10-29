@@ -1,5 +1,5 @@
 # Network: one VPC with a single public subnet, routed to the internet,
-# plus a security group for SSH and HTTP.
+# plus a security group for SSH, HTTP, and Grafana restricted to your IP.
 
 # Pick the first available AZ in the region.
 data "aws_availability_zones" "available" {
@@ -61,11 +61,11 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# --- Security group: SSH from your IP, HTTP from anywhere ---
+# --- Security group: SSH and Grafana from your IP, HTTP from anywhere ---
 
 resource "aws_security_group" "web" {
   name        = "${local.name_prefix}-web-sg"
-  description = "Allow SSH (22) and HTTP (80)"
+  description = "Allow SSH (22) and Grafana (3000) from your IP, HTTP (80)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -82,6 +82,14 @@ resource "aws_security_group" "web" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Grafana from my IP"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = [var.my_ip_cidr]
   }
 
   egress {

@@ -36,7 +36,7 @@ variable "public_subnet_cidr" {
 }
 
 variable "my_ip_cidr" {
-  description = "Your public IP allowed to SSH in, e.g. 203.0.113.10/32"
+  description = "Your public IP allowed to SSH and access Grafana, e.g. 203.0.113.10/32"
   type        = string
   # No default on purpose: SSH should never be open to the whole internet by accident.
 }
