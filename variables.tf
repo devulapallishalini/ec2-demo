@@ -1,4 +1,4 @@
-# All inputs live here. Set them per environment in dev.tfvars / prod.tfvars.
+# All inputs live here. Set them in dev.tfvars.
 
 variable "region" {
   description = "AWS region to deploy into"
@@ -12,12 +12,12 @@ variable "project" {
 }
 
 variable "environment" {
-  description = "Environment name, e.g. dev or prod"
+  description = "Environment name; this project is limited to dev to reduce costs"
   type        = string
 
   validation {
-    condition     = contains(["dev", "prod"], var.environment)
-    error_message = "environment must be \"dev\" or \"prod\"."
+    condition     = var.environment == "dev"
+    error_message = "Only the dev environment is enabled to limit costs."
   }
 }
 
@@ -44,9 +44,14 @@ variable "my_ip_cidr" {
 # --- Server ---
 
 variable "instance_type" {
-  description = "EC2 size"
+  description = "EC2 size; restricted to t3.micro to limit costs"
   type        = string
   default     = "t3.micro"
+
+  validation {
+    condition     = var.instance_type == "t3.micro"
+    error_message = "instance_type must be t3.micro to limit costs."
+  }
 }
 
 variable "ami_name_pattern" {

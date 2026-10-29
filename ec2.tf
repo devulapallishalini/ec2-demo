@@ -28,6 +28,10 @@ resource "aws_instance" "web" {
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.deployer.key_name
 
+  credit_specification {
+    cpu_credits = "standard"
+  }
+
   # Serve the booking app with nginx and Grafana directly; no container runtime is needed.
   user_data                   = <<-EOF
     #!/bin/bash
