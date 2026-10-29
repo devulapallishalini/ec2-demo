@@ -1,0 +1,16 @@
+[Unit]
+Description=Booking app system metrics exporter
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=BOOKING_HEALTH_URL=http://127.0.0.1/
+Environment=METRICS_INTERVAL_SECONDS=15
+ExecStart=/opt/booking-app-venv/bin/python /opt/booking-monitor/system_monitor.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -11,15 +11,21 @@ on:
       - "**.tf"
       - "**.tfvars"
       - ".terraform.lock.hcl"
+      - ".tflint.hcl"
       - "keys/**"
+      - "monitoring/**"
+      - "tests/**"
       - ".github/workflows/terraform.yml"
   push:
-    branches: [main]
+    branches: ["**"]
     paths:
       - "**.tf"
       - "**.tfvars"
       - ".terraform.lock.hcl"
+      - ".tflint.hcl"
       - "keys/**"
+      - "monitoring/**"
+      - "tests/**"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
     inputs:
@@ -45,12 +51,52 @@ env:
   AWS_REGION: ap-south-1
 
 jobs:
+  checks:
+    name: Terraform checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Initialize providers
+        run: terraform init -backend=false -lockfile=readonly
+
+      - name: Validate
+        run: terraform validate -no-color
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Initialize TFLint plugins
+        run: tflint --init
+
+      - name: Lint Terraform
+        run: tflint --recursive --minimum-failure-severity=warning
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test monitoring script
+        run: python -m unittest discover -s tests -v
+
   # ---------------------------------------------------------------------------
   # Pull requests: check formatting, validate, and plan both environments.
   # ---------------------------------------------------------------------------
   plan:
     name: Plan (${{ matrix.env }})
     if: github.event_name == 'pull_request'
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -144,6 +190,7 @@ jobs:
   apply:
     name: Apply (${{ matrix.env }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -190,6 +237,7 @@ jobs:
   manual:
     name: ${{ inputs.action }} (${{ inputs.environment }})
     if: github.event_name == 'workflow_dispatch'
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}

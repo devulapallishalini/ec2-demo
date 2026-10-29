@@ -26,6 +26,10 @@ output "web_url" {
   value = "http://${aws_instance.web.public_ip}"
 }
 
+output "grafana_url" {
+  value = "http://${aws_instance.web.public_ip}:3000"
+}
+
 output "ssh_command" {
   value = "ssh -i ~/firstserver ec2-user@${aws_instance.web.public_ip}"
 }
