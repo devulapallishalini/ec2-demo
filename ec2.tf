@@ -27,13 +27,15 @@ resource "aws_instance" "web" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.deployer.key_name
+  iam_instance_profile   = aws_iam_instance_profile.web.name
+  depends_on             = [aws_iam_role_policy.web_backup]
 
   credit_specification {
     cpu_credits = "standard"
   }
 
   # Serve the booking app with nginx and Grafana directly; no container runtime is needed.
-  user_data                   = <<-EOF
+  user_data_base64 = base64gzip(<<-EOF
     #!/bin/bash
     set -euo pipefail
     cat > /etc/yum.repos.d/grafana.repo <<'GRAFANA_REPO'
@@ -47,10 +49,10 @@ resource "aws_instance" "web" {
     sslverify=1
     sslcacert=/etc/pki/tls/certs/ca-bundle.crt
     GRAFANA_REPO
-    dnf install -y nginx grafana python3 python3-pip
+    dnf install -y nginx grafana python3 python3-pip cronie
     python3 -m venv /opt/booking-app-venv
-    /opt/booking-app-venv/bin/python -m pip install --no-cache-dir psutil
-    install -d -m 0755 /opt/booking-monitor /etc/prometheus /etc/grafana/provisioning/datasources /etc/grafana/provisioning/dashboards /var/lib/grafana/dashboards
+    /opt/booking-app-venv/bin/python -m pip install --no-cache-dir psutil boto3
+    install -d -m 0755 /opt/booking-monitor /opt/booking-backup /etc/prometheus /etc/grafana/provisioning/datasources /etc/grafana/provisioning/dashboards /var/lib/grafana/dashboards
     echo '${base64encode(file("${path.module}/monitoring/system_monitor.py"))}' | base64 -d > /opt/booking-monitor/system_monitor.py
     echo '${base64encode(file("${path.module}/monitoring/system-monitor.service"))}' | base64 -d > /etc/systemd/system/system-monitor.service
     echo '${base64encode(file("${path.module}/monitoring/prometheus.yml"))}' | base64 -d > /etc/prometheus/prometheus.yml
@@ -58,6 +60,17 @@ resource "aws_instance" "web" {
     echo '${base64encode(file("${path.module}/monitoring/grafana-datasource.yml"))}' | base64 -d > /etc/grafana/provisioning/datasources/prometheus.yml
     echo '${base64encode(file("${path.module}/monitoring/grafana-dashboard-provider.yml"))}' | base64 -d > /etc/grafana/provisioning/dashboards/booking-app.yml
     echo '${base64encode(file("${path.module}/monitoring/grafana-dashboard.json"))}' | base64 -d > /var/lib/grafana/dashboards/booking-system-health.json
+    echo '${base64encode(file("${path.module}/backup.py"))}' | base64 -d > /opt/booking-backup/backup.py
+    cat > /etc/booking-backup.env <<'BACKUP_ENV'
+    BACKUP_BUCKET=${aws_s3_bucket.backups.bucket}
+    AWS_DEFAULT_REGION=${var.region}
+    BACKUP_PATHS="/usr/share/nginx/html /var/lib/booking-app /etc/nginx /var/log/nginx /etc/prometheus /etc/grafana/provisioning /opt/booking-monitor"
+    BACKUP_ENV
+    chmod 0600 /etc/booking-backup.env
+    cat > /etc/cron.d/booking-backup <<'BACKUP_CRON'
+    */30 * * * * root set -a; . /etc/booking-backup.env; set +a; /opt/booking-app-venv/bin/python /opt/booking-backup/backup.py >> /var/log/booking-backup.log 2>&1
+    BACKUP_CRON
+    chmod 0644 /etc/cron.d/booking-backup
     chown -R grafana:grafana /etc/grafana/provisioning /var/lib/grafana/dashboards
     id prometheus >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin prometheus
     chown -R prometheus:prometheus /etc/prometheus
@@ -71,10 +84,12 @@ resource "aws_instance" "web" {
     curl --fail --location --silent --show-error --retry 5 "$app_url/styles.css" -o /usr/share/nginx/html/styles.css
     curl --fail --location --silent --show-error --retry 5 "$app_url/app.js" -o /usr/share/nginx/html/app.js
     systemctl enable --now nginx
+    systemctl enable --now crond
     systemctl daemon-reload
     systemctl enable --now prometheus system-monitor
     systemctl enable --now grafana-server
   EOF
+  )
   user_data_replace_on_change = true
 
   tags = {
