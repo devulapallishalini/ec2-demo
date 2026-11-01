@@ -32,23 +32,74 @@ class AuditTests(unittest.TestCase):
 
     @patch.object(audit.boto3, "client")
     def test_instance_check_requires_running_state(self, client):
-        client.return_value.describe_instances.return_value = {
-            "Reservations": [
-                {"Instances": [{"State": {"Name": "running"}}]}
-            ]
+        instance = {
+            "InstanceId": "i-1234567890abcdef0",
+            "State": {"Name": "running"},
+            "PublicIpAddress": "203.0.113.1",
         }
-        audit.check_instance("i-1234567890abcdef0", "ap-south-1")
+        client.return_value.describe_instances.return_value = {
+            "Reservations": [{"Instances": [instance]}]
+        }
+        self.assertEqual(
+            audit.check_instance("i-1234567890abcdef0", "ap-south-1"),
+            instance,
+        )
         client.assert_called_once_with("ec2", region_name="ap-south-1")
+
+    @patch.object(audit.boto3, "client")
+    def test_instance_check_discovers_instance_by_name_tag(self, client):
+        instance = {
+            "InstanceId": "i-1234567890abcdef0",
+            "State": {"Name": "running"},
+            "PublicIpAddress": "203.0.113.1",
+        }
+        client.return_value.describe_instances.return_value = {
+            "Reservations": [{"Instances": [instance]}]
+        }
+
+        self.assertEqual(audit.check_instance(None, "ap-south-1"), instance)
+        client.return_value.describe_instances.assert_called_once_with(
+            Filters=[
+                {"Name": "tag:Name", "Values": ["demo-dev-web"]},
+                {
+                    "Name": "instance-state-name",
+                    "Values": ["pending", "running", "stopping", "stopped"],
+                },
+            ]
+        )
 
     @patch.object(audit.boto3, "client")
     def test_instance_check_rejects_non_running_state(self, client):
         client.return_value.describe_instances.return_value = {
             "Reservations": [
-                {"Instances": [{"State": {"Name": "stopped"}}]}
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": "i-1234567890abcdef0",
+                            "State": {"Name": "stopped"},
+                        }
+                    ]
+                }
             ]
         }
         with self.assertRaisesRegex(RuntimeError, "is stopped"):
             audit.check_instance("i-1234567890abcdef0", "ap-south-1")
+
+    @patch.object(audit.boto3, "client")
+    def test_instance_check_rejects_ambiguous_discovery(self, client):
+        client.return_value.describe_instances.return_value = {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {"InstanceId": "i-one", "State": {"Name": "running"}},
+                        {"InstanceId": "i-two", "State": {"Name": "running"}},
+                    ]
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "found 2"):
+            audit.check_instance(None, "ap-south-1")
 
 
 if __name__ == "__main__":

@@ -14,8 +14,6 @@ jobs:
     timeout-minutes: 10
 
     env:
-      APP_URL: ${{ vars.APP_URL }}
-      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
       AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
 
     steps:
