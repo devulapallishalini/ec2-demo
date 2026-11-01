@@ -12,10 +12,13 @@ on:
       - "**.tfvars"
       - ".terraform.lock.hcl"
       - ".tflint.hcl"
+      - "audit.py"
+      - "backup.py"
       - "keys/**"
       - "monitoring/**"
       - "tests/**"
       - ".github/workflows/terraform.yml"
+      - ".github/workflows/uptime-audit.yml"
   push:
     branches: ["**"]
     paths:
@@ -23,10 +26,13 @@ on:
       - "**.tfvars"
       - ".terraform.lock.hcl"
       - ".tflint.hcl"
+      - "audit.py"
+      - "backup.py"
       - "keys/**"
       - "monitoring/**"
       - "tests/**"
       - ".github/workflows/terraform.yml"
+      - ".github/workflows/uptime-audit.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -86,6 +92,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: python -m pip install boto3
 
       - name: Test monitoring script
         run: python -m unittest discover -s tests -v

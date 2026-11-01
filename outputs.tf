@@ -10,6 +10,10 @@ output "web_sg_id" {
   value = aws_security_group.web.id
 }
 
+output "backup_bucket_name" {
+  value = aws_s3_bucket.backups.bucket
+}
+
 output "instance_id" {
   value = aws_instance.web.id
 }
