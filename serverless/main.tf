@@ -6,6 +6,13 @@ data "archive_file" "lambda" {
   output_path = "${path.module}/.terraform/lambda.zip"
 }
 
+locals {
+  lambda_source_hash = sha256(join("", [
+    for file in sort(fileset("${path.module}/src", "**")) :
+    "${file}:${filesha256("${path.module}/src/${file}")}"
+  ]))
+}
+
 resource "aws_s3_bucket" "deployments" {
   bucket = "${local.name_prefix}-deployments-${data.aws_caller_identity.current.account_id}-${var.region}"
 }
@@ -80,9 +87,9 @@ resource "aws_s3_bucket_policy" "deployments" {
 
 resource "aws_s3_object" "lambda" {
   bucket      = aws_s3_bucket.deployments.id
-  key         = "lambda/${data.archive_file.lambda.output_md5}.zip"
+  key         = "lambda/${local.lambda_source_hash}.zip"
   source      = data.archive_file.lambda.output_path
-  source_hash = data.archive_file.lambda.output_base64sha256
+  source_hash = local.lambda_source_hash
 }
 
 resource "aws_iam_role" "lambda" {
@@ -132,7 +139,7 @@ resource "aws_lambda_function" "api" {
 
   s3_bucket        = aws_s3_bucket.deployments.id
   s3_key           = aws_s3_object.lambda.key
-  source_code_hash = data.archive_file.lambda.output_base64sha256
+  source_code_hash = local.lambda_source_hash
 
   depends_on = [
     aws_cloudwatch_log_group.lambda,
