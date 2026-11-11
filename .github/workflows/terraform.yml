@@ -18,6 +18,7 @@ on:
       - "monitoring/**"
       - "tests/**"
       - ".github/workflows/uptime-audit.yml"
+      - ".github/workflows/terraform.yml"
       - "!serverless/**"
   push:
     branches: ["**"]
