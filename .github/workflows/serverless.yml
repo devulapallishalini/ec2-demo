@@ -1,0 +1,87 @@
+name: Serverless API
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "serverless/**"
+      - ".github/workflows/serverless.yml"
+  push:
+    branches: [main]
+    paths:
+      - "serverless/**"
+      - ".github/workflows/serverless.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-south-1
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  validate:
+    name: Validate serverless stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test Lambda handler
+        run: PYTHONPATH=serverless/src python -m unittest discover -s serverless/tests -v
+
+      - name: Check formatting
+        run: terraform -chdir=serverless fmt -check -recursive
+
+      - name: Initialize providers
+        run: terraform -chdir=serverless init -backend=false -lockfile=readonly
+
+      - name: Validate
+        run: terraform -chdir=serverless validate -no-color
+
+  deploy:
+    name: Apply serverless stack
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: dev
+    concurrency:
+      group: terraform-serverless-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Initialize remote state
+        run: terraform -chdir=serverless init -lockfile=readonly
+
+      - name: Apply
+        run: terraform -chdir=serverless apply -auto-approve -no-color
+
+      - name: Publish invoke URL
+        run: |
+          URL="$(terraform -chdir=serverless output -raw invoke_url)"
+          echo "Invoke URL: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Health URL: ${URL}/health" >> "$GITHUB_STEP_SUMMARY"

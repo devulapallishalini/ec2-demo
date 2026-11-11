@@ -19,6 +19,7 @@ on:
       - "tests/**"
       - ".github/workflows/terraform.yml"
       - ".github/workflows/uptime-audit.yml"
+      - "!serverless/**"
   push:
     branches: ["**"]
     paths:
@@ -33,6 +34,7 @@ on:
       - "tests/**"
       - ".github/workflows/terraform.yml"
       - ".github/workflows/uptime-audit.yml"
+      - "!serverless/**"
   workflow_dispatch:
     inputs:
       environment:
