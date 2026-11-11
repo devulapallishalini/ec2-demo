@@ -5,6 +5,7 @@
 tfplan
 *.tfplan
 crash.log
+*.zip
 
 # Python
 __pycache__/
