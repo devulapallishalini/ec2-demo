@@ -16,10 +16,10 @@ on:
       - "backup.py"
       - "keys/**"
       - "monitoring/**"
+      - "serverless/**"
       - "tests/**"
       - ".github/workflows/uptime-audit.yml"
       - ".github/workflows/terraform.yml"
-      - "!serverless/**"
   push:
     branches: ["**"]
     paths:
