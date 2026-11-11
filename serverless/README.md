@@ -3,6 +3,8 @@
 This stack deploys a Python 3.12 Lambda behind an API Gateway HTTP API. The
 application is in `src/app.py`; `archive_file` packages it, and Terraform
 uploads a versioned archive to a private S3 bucket before configuring Lambda.
+The deployment key is based on source-file contents rather than ZIP metadata,
+so checkout timestamps do not trigger unnecessary artifact replacements.
 Lambda can write logs only to its own 14-day CloudWatch log group.
 
 The `serverless/` directory has a separate Terraform state from the existing
